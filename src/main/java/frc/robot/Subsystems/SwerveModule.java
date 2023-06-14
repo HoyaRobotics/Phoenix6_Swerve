@@ -4,21 +4,19 @@
 
 package frc.robot.subsystems;
 
-import com.ctre.phoenix.motorcontrol.ControlMode;
-import com.ctre.phoenix.motorcontrol.DemandType;
-import com.ctre.phoenix.motorcontrol.SupplyCurrentLimitConfiguration;
-import com.ctre.phoenix.motorcontrol.can.TalonFX;
-import com.ctre.phoenix.sensors.AbsoluteSensorRange;
-import com.ctre.phoenix.sensors.CANCoder;
-import com.ctre.phoenix.sensors.SensorInitializationStrategy;
+import com.ctre.phoenix6.configs.CANcoderConfiguration;
+import com.ctre.phoenix6.configs.TalonFXConfiguration;
+import com.ctre.phoenix6.hardware.CANcoder;
+import com.ctre.phoenix6.hardware.TalonFX;
+import com.ctre.phoenix6.signals.AbsoluteSensorRangeValue;
+import com.ctre.phoenix6.signals.FeedbackSensorSourceValue;
+import com.ctre.phoenix6.signals.SensorDirectionValue;
 
 import edu.wpi.first.math.controller.SimpleMotorFeedforward;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.kinematics.SwerveModulePosition;
 import edu.wpi.first.math.kinematics.SwerveModuleState;
 import edu.wpi.first.wpilibj.Timer;
-import frc.lib.CTREModuleState;
-import frc.lib.Conversions;
 import frc.lib.SwerveModuleConstants;
 import frc.robot.Constants;
 import frc.robot.Constants.ModuleConstants;
@@ -28,7 +26,7 @@ public class SwerveModule {
   private double angleOffset;
   private TalonFX angleMotor;
   private TalonFX driveMotor;
-  private CANCoder angleEncoder;
+  private CANcoder angleEncoder;
   private double lastAngle;
 
   SimpleMotorFeedforward feedforward = new SimpleMotorFeedforward(ModuleConstants.driveKS, ModuleConstants.driveKV, ModuleConstants.driveKA);
@@ -40,15 +38,15 @@ public class SwerveModule {
     angleOffset = moduleConstants.angleOffset;
 
     /* Angle Encoder Configuration */
-    angleEncoder = new CANCoder(moduleConstants.cancoderID, "canivore");
+    angleEncoder = new CANcoder(moduleConstants.cancoderID, Constants.DRIVETRAIN_CANBUS);
     configAngleEncoder();
 
     /* Angle Motor Configuration */
-    angleMotor = new TalonFX(moduleConstants.angleMotorID, "canivore");
-    configAngleMotor();
+    angleMotor = new TalonFX(moduleConstants.angleMotorID, Constants.DRIVETRAIN_CANBUS);
+    configAngleMotor(moduleConstants.cancoderID);
 
     /* Drive Motor Configuration */
-    driveMotor = new TalonFX(moduleConstants.driveMotorID, "canivore");
+    driveMotor = new TalonFX(moduleConstants.driveMotorID, Constants.DRIVETRAIN_CANBUS);
     configDriveMotor();
 
     lastAngle = getPosition().angle.getDegrees();
@@ -102,53 +100,56 @@ public void setDesiredStateAbs(SwerveModuleState desiredState, boolean isOpenLoo
 
 
   private void configAngleEncoder() {
-    angleEncoder.configFactoryDefault();
-    angleEncoder.configAbsoluteSensorRange(AbsoluteSensorRange.Unsigned_0_to_360);
-    angleEncoder.configSensorDirection(Constants.ModuleConstants.canCoderInvert);
-    angleEncoder.configSensorInitializationStrategy(SensorInitializationStrategy.BootToAbsolutePosition);
+    angleEncoder.getConfigurator().apply(new CANcoderConfiguration());
+    var angleEncoderConfigs = new CANcoderConfiguration();
+    angleEncoderConfigs.MagnetSensor.MagnetOffset = angleOffset;
+    angleEncoderConfigs.MagnetSensor.SensorDirection = SensorDirectionValue.Clockwise_Positive;
+    angleEncoderConfigs.MagnetSensor.AbsoluteSensorRange = AbsoluteSensorRangeValue.Signed_PlusMinusHalf;
+    angleEncoder.getConfigurator().apply(angleEncoderConfigs);
   }
 
 
-  private void configAngleMotor() {
-    angleMotor.configFactoryDefault();
-    angleMotor.config_kP(0, Constants.ModuleConstants.angleKP);
-    angleMotor.config_kI(0, Constants.ModuleConstants.angleKI);
-    angleMotor.config_kD(0, Constants.ModuleConstants.angleKD);
-    angleMotor.config_kF(0, Constants.ModuleConstants.angleKF);
-    angleMotor.configSupplyCurrentLimit(new SupplyCurrentLimitConfiguration(Constants.ModuleConstants.angleEnableCurrentLimit, Constants.ModuleConstants.angleContinuousCurrentLimit, Constants.ModuleConstants.anglePeakCurrentLimit, Constants.ModuleConstants.anglePeakCurrentDuration));
-    angleMotor.configIntegratedSensorInitializationStrategy(SensorInitializationStrategy.BootToZero);
-    angleMotor.configNeutralDeadband(Constants.ModuleConstants.angleNeutralDeadband);
-    //angleMotor.configOpenloopRamp(0.01);
-    //angleMotor.configClosedloopRamp(0.01);
-
-    angleMotor.setInverted(Constants.ModuleConstants.angleMotorInvert);
-    angleMotor.setNeutralMode(Constants.ModuleConstants.angleNeutralMode);
-    Timer.delay(1.0);
-    resetToAbsolute();
+  private void configAngleMotor(int cancoderID) {
+    angleMotor.getConfigurator().apply(new TalonFXConfiguration());
+    var talonfxConfigs = new TalonFXConfiguration();
+    talonfxConfigs.Slot0.kV = 0.0;
+    talonfxConfigs.Slot0.kS = 0.0;
+    talonfxConfigs.Slot0.kP = ModuleConstants.angleKP;
+    talonfxConfigs.Slot0.kI = ModuleConstants.angleKI;
+    talonfxConfigs.Slot0.kD = ModuleConstants.angleKD;
+    talonfxConfigs.ClosedLoopGeneral.ContinuousWrap = true;
+    talonfxConfigs.CurrentLimits.SupplyCurrentLimit = ModuleConstants.angleContinuousCurrentLimit;
+    talonfxConfigs.CurrentLimits.SupplyCurrentLimitEnable = ModuleConstants.angleEnableCurrentLimit;
+    talonfxConfigs.CurrentLimits.SupplyCurrentThreshold = ModuleConstants.anglePeakCurrentLimit;
+    talonfxConfigs.CurrentLimits.SupplyTimeThreshold = ModuleConstants.anglePeakCurrentDuration;
+    talonfxConfigs.Voltage.PeakForwardVoltage = 10;
+    talonfxConfigs.Voltage.PeakReverseVoltage = -10;
+    talonfxConfigs.Feedback.FeedbackRemoteSensorID = cancoderID;
+    talonfxConfigs.Feedback.FeedbackSensorSource = FeedbackSensorSourceValue.FusedCANcoder;
+    talonfxConfigs.Feedback.RotorToSensorRatio = ModuleConstants.angleGearRatio;
+    talonfxConfigs.MotorOutput.NeutralMode = ModuleConstants.angleNeutralMode;
+    talonfxConfigs.MotorOutput.Inverted = ModuleConstants.angleMotorInvert;
+    angleMotor.getConfigurator().apply(talonfxConfigs);
   }
 
 
   private void configDriveMotor() {
-    driveMotor.configFactoryDefault();
-    driveMotor.config_kP(0, Constants.ModuleConstants.driveKP);
-    driveMotor.config_kI(0, Constants.ModuleConstants.driveKI);
-    driveMotor.config_kD(0, Constants.ModuleConstants.driveKD);
-    driveMotor.config_kF(0, Constants.ModuleConstants.driveKF);
-    driveMotor.configSupplyCurrentLimit(new SupplyCurrentLimitConfiguration(Constants.ModuleConstants.driveEnableCurrentLimit, Constants.ModuleConstants.driveContinuousCurrentLimit, Constants.ModuleConstants.drivePeakCurrentLimit, Constants.ModuleConstants.drivePeakCurrentDuration));
-    driveMotor.configIntegratedSensorInitializationStrategy(SensorInitializationStrategy.BootToZero);
-    driveMotor.configOpenloopRamp(Constants.ModuleConstants.openLoopRamp);
-    driveMotor.configClosedloopRamp(Constants.ModuleConstants.closedLoopRamp);
-
-    driveMotor.setInverted(Constants.ModuleConstants.driveMotorInvert);
-    driveMotor.setNeutralMode(Constants.ModuleConstants.driveNeutralMode);
-    driveMotor.setSelectedSensorPosition(0);
+    driveMotor.getConfigurator().apply(new TalonFXConfiguration());
+    var talonfxConfigs = new TalonFXConfiguration();
+    talonfxConfigs.Slot0.kV = 0.0;
+    talonfxConfigs.Slot0.kS = 0.0;
+    talonfxConfigs.Slot0.kP = ModuleConstants.driveKP;
+    talonfxConfigs.Slot0.kI = ModuleConstants.driveKI;
+    talonfxConfigs.Slot0.kD = ModuleConstants.driveKD;
+    talonfxConfigs.ClosedLoopGeneral.ContinuousWrap = true;
+    talonfxConfigs.CurrentLimits.SupplyCurrentLimit = ModuleConstants.driveContinuousCurrentLimit;
+    talonfxConfigs.CurrentLimits.SupplyCurrentLimitEnable = ModuleConstants.driveEnableCurrentLimit;
+    talonfxConfigs.CurrentLimits.SupplyCurrentThreshold = ModuleConstants.drivePeakCurrentLimit;
+    talonfxConfigs.CurrentLimits.SupplyTimeThreshold = ModuleConstants.drivePeakCurrentDuration;
+    talonfxConfigs.MotorOutput.NeutralMode = ModuleConstants.driveNeutralMode;
+    talonfxConfigs.MotorOutput.Inverted = ModuleConstants.driveMotorInvert;
+    driveMotor.getConfigurator().apply(talonfxConfigs);
   }
-
-
-  public Rotation2d getCanCoder() {
-    return Rotation2d.fromDegrees(angleEncoder.getAbsolutePosition());
-  }
-
   
   //Should not use anymore use getPosition() instead
   public SwerveModuleState getState() {
