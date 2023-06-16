@@ -6,6 +6,7 @@ package frc.robot.subsystems;
 
 import com.ctre.phoenix6.BaseStatusSignal;
 
+import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.math.kinematics.SwerveDriveKinematics;
@@ -127,10 +128,10 @@ public class SwerveSubsystem extends SubsystemBase {
     return linearVelocity;
   }
 
-  public Rotation2d getCurrentChassisHeading(boolean refresh) {
+  public Rotation2d getCurrentChassisHeading(Pose2d currentPose, boolean refresh) {
     ChassisSpeeds currentSpeeds = SwerveConstants.KINEMATICS.toChassisSpeeds(this.getStates(refresh));
     Rotation2d robotHeading = new Rotation2d(Math.atan2(currentSpeeds.vyMetersPerSecond, currentSpeeds.vxMetersPerSecond));
-    Rotation2d currentHeading = robotHeading.plus(PoseEstimator.getCurrentPose().getRotation());
+    Rotation2d currentHeading = robotHeading.plus(currentPose.getRotation());
     return currentHeading;
   }
 }
